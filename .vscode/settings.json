@@ -1,0 +1,7 @@
+{
+  "rust-analyzer.cargo.extraArgs": [
+    "--target",
+    "aarch64-unknown-linux-musl"
+  ],
+  "rust-analyzer.linkedProjects": ["Cargo.toml", "fkill-ebpf/Cargo.toml"]
+}

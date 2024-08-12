@@ -1,0 +1,4 @@
+[alias]
+xtask = "run --package xtask --"
+[target.aarch64-unknown-linux-musl]
+linker = "ld.lld"
