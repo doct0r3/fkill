@@ -18,7 +18,7 @@ libc = "0.2"
 log = "0.4"
 tokio = { version = "1.25", features = ["macros", "rt", "rt-multi-thread", "net", "signal"] }
 hexplay = "*"
-clap = "3.2.24"
+clap = "4.5.15"
 sysinfo = "0.25"
 regex = "*"
 nix =  { version = "*", features = ["signal"] }

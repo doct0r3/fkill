@@ -4,7 +4,7 @@ use aya::maps::RingBuf;
 use aya::programs::TracePoint;
 use aya::{include_bytes_aligned, Ebpf};
 use aya_log::EbpfLogger;
-use clap::{App, Arg};
+use clap::{Arg, ArgAction, Command};
 use fkill_common::NewClone;
 use log::debug;
 use nix::sys::signal::{kill, Signal};
@@ -17,26 +17,24 @@ use tokio::io::unix::AsyncFd;
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
-    let matches = App::new("fkill")
+    let matches = Command::new("fkill")
         .version("1.0")
         .author("By Dr.3")
         .about("fork kill")
         .arg(
-            Arg::with_name("pid")
+            Arg::new("pid")
                 .short('p')
                 .long("pid")
-                .takes_value(true)
                 .help("filter specific pid")
+                .action(ArgAction::Set)
+                .num_args(0..)
                 .required(true),
         )
         .get_matches();
-    let pid = match matches.value_of("pid") {
-        Some(pid_str) => pid_str.parse().expect("pid must be a number"),
-        None => i32::MAX,
-    };
+    
+    let pid_arr: Vec<i32> = matches.get_many::<String>("pid").unwrap().into_iter().map(|s| s.parse::<i32>().expect("Pid must be integer")).collect();
 
     env_logger::init();
-    
 
     // Bump the memlock rlimit. This is needed for older kernels that don't use the
     // new memcg based accounting, see https://lwn.net/Articles/837122/
@@ -69,7 +67,7 @@ async fn main() -> Result<(), anyhow::Error> {
     let channel = RingBuf::try_from(channel).unwrap();
     let mut async_channel = AsyncFd::new(channel)?;
     let mut pid_store = HashSet::new();
-    pid_store.insert(pid);
+    pid_store.extend(pid_arr.iter().copied());
     loop {
         let mut lock = async_channel.readable_mut().await?;
         let entry = lock.get_inner_mut().next();
@@ -91,7 +89,7 @@ async fn main() -> Result<(), anyhow::Error> {
         if parent as u32 == process::id() {
             continue;
         }
-        println!("Spawning child:parent:{},child:{}", parent, child);
+        // println!("Spawning child:parent:{},child:{}", parent, child);
         let need_kill = if pid_store.contains(&parent) {
             true
         } else {
