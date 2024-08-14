@@ -17,7 +17,6 @@ env_logger = "0.11.3"
 libc = "0.2"
 log = "0.4"
 tokio = { version = "1.25", features = ["macros", "rt", "rt-multi-thread", "net", "signal"] }
-hexplay = "*"
 clap = "4.5.15"
 sysinfo = "0.25"
 regex = "*"

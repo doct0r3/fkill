@@ -1,5 +1,3 @@
-extern crate hexplay;
-
 use aya::maps::RingBuf;
 use aya::programs::TracePoint;
 use aya::{include_bytes_aligned, Ebpf};
