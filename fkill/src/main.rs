@@ -3,11 +3,8 @@ use aya::programs::TracePoint;
 use aya::{include_bytes_aligned, Ebpf};
 use aya_log::EbpfLogger;
 use clap::{Arg, ArgAction, Command};
-use fkill_common::NewClone;
+use fkill_common::{NewClone, PidBuf};
 use log::debug;
-use nix::sys::signal::{kill, Signal};
-use nix::unistd::Pid;
-use std::collections::HashSet;
 use std::mem::{self, size_of};
 use std::ops::Deref;
 use std::process::{self};
@@ -29,8 +26,13 @@ async fn main() -> Result<(), anyhow::Error> {
                 .required(true),
         )
         .get_matches();
-    
-    let pid_arr: Vec<i32> = matches.get_many::<String>("pid").unwrap().into_iter().map(|s| s.parse::<i32>().expect("Pid must be integer")).collect();
+
+    let pid_arr: Vec<i32> = matches
+        .get_many::<String>("pid")
+        .unwrap()
+        .into_iter()
+        .map(|s| s.parse::<i32>().expect("Pid must be integer"))
+        .collect();
 
     env_logger::init();
 
@@ -59,13 +61,33 @@ async fn main() -> Result<(), anyhow::Error> {
         .try_into()?;
     program.load()?;
     program.attach("sched", "sched_process_fork")?;
+
+    let program: &mut TracePoint = bpf
+        .program_mut("handle_sched_sched_process_exec")
+        .unwrap()
+        .try_into()?;
+    program.load()?;
+    program.attach("sched", "sched_process_exec")?;
+
+
     let channel = bpf
         .take_map("EVENT_CHANNEL")
         .expect("failed to take event channel");
     let channel = RingBuf::try_from(channel).unwrap();
     let mut async_channel = AsyncFd::new(channel)?;
-    let mut pid_store = HashSet::new();
-    pid_store.extend(pid_arr.iter().copied());
+
+    let mut pid_store_buf = RingBuf::try_from(bpf.map_mut("PID_STORE_BUF").unwrap()).unwrap();
+    while let Some(sample) = pid_store_buf.next() {
+        let buf: [u8; size_of::<PidBuf>()] =
+            sample.deref().try_into().expect("Deserialization Failed!");
+        let data: PidBuf = unsafe { mem::transmute(buf) };
+        let _ = pid_arr.iter().enumerate().map(|(idx, pid)| {
+            print!("Initalizing buf.. idx:{},pid:{}", idx, pid);
+            let mut a = data.pids;
+            a[idx] = *pid;
+        });
+    }
+
     loop {
         let mut lock = async_channel.readable_mut().await?;
         let entry = lock.get_inner_mut().next();
@@ -83,20 +105,10 @@ async fn main() -> Result<(), anyhow::Error> {
         let data: NewClone = unsafe { mem::transmute(buf) };
 
         let parent = data.parent_pid;
-        let child = data.child_pid;
+
         if parent as u32 == process::id() {
             continue;
         }
         // println!("Spawning child:parent:{},child:{}", parent, child);
-        let need_kill = if pid_store.contains(&parent) {
-            true
-        } else {
-            false
-        };
-        if need_kill {
-            pid_store.insert(child);
-            println!("Stopping child:{}", child);
-            kill(Pid::from_raw(child), Signal::SIGSTOP)?;
-        }
     }
 }
